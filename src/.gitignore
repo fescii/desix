@@ -1,0 +1,13 @@
+.idea/
+venv/
+venv
+.venv
+.env
+.vscode
+*.iml
+*.iws
+*.ipr
+__pycache__
+*.pyc
+*.pyo
+*.pyd
