@@ -12,8 +12,8 @@ from config import Config
 from bot.commands import Commands
 from bot.handlers import BotHandlers
 from db.queries import UserQueries, AccountQueries
-from hooks.x import TwitterWebhook
-from apis.x import TwitterAPI
+from hooks.x import TwitterMonitor
+from apis.x import TwitterAPIv2
 from db.models import Base
 
 logging.basicConfig(
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 async def setup_commands(app):
-	"""Setup bot commands after bot is fully initialized"""
+	"""Set up bot commands after the bot is fully initialized"""
 	try:
 		commands = [
 			("start", "Start the bot"),
@@ -36,6 +36,8 @@ async def setup_commands(app):
 			("add_account", "Add a Twitter account to monitor"),
 			("remove_account", "Remove a Twitter account from monitoring"),
 			("list_accounts", "List all monitored Twitter accounts"),
+			("start_monitoring", "Start monitoring Twitter accounts"),
+			("stop_monitoring", "Stop monitoring Twitter accounts"),
 			("help", "Show help message")
 		]
 		await app.bot.set_my_commands(commands)
@@ -95,29 +97,16 @@ async def create_app(app_config: Config):
 		account_queries = AccountQueries(session)
 		
 		#initialize Twitter API
-		twitter_api = TwitterAPI(app_config)
+		twitter_api = TwitterAPIv2(app_config)
 		
-		# Setup webhook handler
-		webhook_handler = TwitterWebhook(account_queries, app_config, telegram_app)
-		fastapi_app.post("/webhook/twitter")(webhook_handler.handle_webhook)
-		
-		# Setup webhook handler
-		webhook_handler = TwitterWebhook(account_queries, app_config, telegram_app)
-		
-		# Register webhook endpoints
-		fastapi_app.get("/webhook/twitter")(webhook_handler.handle_crc_check)
-		fastapi_app.post("/webhook/twitter")(webhook_handler.handle_webhook)
-		
-		# Register webhook with Twitter
-		webhook_id = await webhook_handler.register_webhook()
-		if webhook_id:
-			app_config.TWITTER_WEBHOOK_ID = webhook_id
-			logger.info("Twitter webhook registered successfully")
-		else:
-			logger.error("Failed to register Twitter webhook")
-		
+		twitter_monitor = TwitterMonitor(
+			twitter_api=twitter_api,
+			account_queries=account_queries,
+			telegram_bot=telegram_app,
+		)
+	
 		# Initialize bot components
-		commands = Commands(telegram_app, user_queries, account_queries, webhook_handler, twitter_api)
+		commands = Commands(telegram_app, user_queries, account_queries, twitter_api, twitter_monitor)
 		handlers = BotHandlers(commands)
 		
 		# Register handlers
@@ -125,13 +114,13 @@ async def create_app(app_config: Config):
 		
 		# Store telegram bot in-app state
 		fastapi_app.state.telegram_bot = telegram_app
+		fastapi_app.state.twitter_monitor = twitter_monitor
 		
 		return fastapi_app
 	
 	except Exception as exception:
 		logger.error(f"Error creating application: {str(exception)}")
 		raise
-
 
 def run_app():
 	try:

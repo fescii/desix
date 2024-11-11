@@ -7,7 +7,7 @@ from functools import wraps
 from telegram import Update
 from telegram.ext import ContextTypes
 import logging
-
+import asyncio
 logger = logging.getLogger(__name__)
 
 def admin_only(func):
@@ -22,12 +22,13 @@ def admin_only(func):
 	return wrapped
 
 class Commands:
-	def __init__(self, app, user_queries, account_queries, twitter_webhook, twitter_api):
+	def __init__(self, app, user_queries, account_queries, twitter_api, twitter_monitor):
+		self.is_monitoring = False
 		self.app = app
 		self.user_queries = user_queries
 		self.account_queries = account_queries
-		self.twitter_webhook = twitter_webhook
 		self.twitter_api = twitter_api
+		self.twitter_monitor = twitter_monitor
 	
 	async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
 		"""Handle the /start command"""
@@ -240,11 +241,11 @@ class Commands:
 				)
 				return
 			
-			username = context.args
+			username = context.args[0]
 			twitter_id = self.twitter_api.get_user_id(username)
 			username = username.strip('@')  # Remove @ if provided
 			
-			# if id is None, user does not exist
+			# if id is None, the user does not exist
 			if not twitter_id:
 				await update.message.reply_text(
 					f"User @{username} does not exist."
@@ -266,11 +267,7 @@ class Commands:
 				added_by=update.effective_user.id
 			)
 			
-			# Subscribe to user's tweets via webhook
-			subscription_success = await self.twitter_webhook.subscribe_to_user_events(twitter_id)
-			
-			if subscription_success:
-				account.webhook_id = self.twitter_webhook.config.WEBHOOK_ID
+			if account:
 				self.account_queries.session.commit()
 				
 				await update.message.reply_text(
@@ -278,7 +275,7 @@ class Commands:
 				)
 				logger.info(f"Account @{username} added successfully by {update.effective_user.id}")
 			else:
-				# Rollback account creation if webhook subscription fails
+				# Rollback account creation if the webhook subscription fails
 				self.account_queries.session.delete(account)
 				self.account_queries.session.commit()
 				await update.message.reply_text(
@@ -312,16 +309,6 @@ class Commands:
 					f"Account @{username} is not currently monitored."
 				)
 				return
-			
-			# Unsubscribe from user's tweets
-			if account.webhook_id:
-				success = await self.twitter_webhook.unsubscribe_from_user_events(
-					account.twitter_id
-				)
-				if not success:
-					await update.message.reply_text(
-						"Warning: Failed to unsubscribe from tweets, but removing from database."
-					)
 			
 			# Remove from database
 			self.account_queries.session.delete(account)
@@ -388,14 +375,17 @@ class Commands:
 			)
 			
 			admin_commands = (
-				"\nAdmin commands:\n"
+				"\n*Admin commands:*\n"
 				"/approve_user - Approve a user\n"
 				"/deny_user - Deny a user\n"
 				"/promote_admin - Promote a user to admin\n"
 				"/revoke_admin - Revoke admin status\n"
 				"/add_account - Add Twitter account to monitor\n"
 				"/remove_account - Remove monitored Twitter account\n"
-				"/list_accounts - List all monitored accounts"
+				"/list_accounts - List all monitored accounts\n"
+				"/start_monitoring - Start monitoring Twitter accounts\n"
+				"/stop_monitoring - Stop monitoring Twitter accounts\n"
+				"/help - Show available commands"
 			)
 			
 			if is_admin:
@@ -403,13 +393,50 @@ class Commands:
 			else:
 				await update.message.reply_text(base_commands)
 			
-			# await update.message.reply_text(
-			#   base_commands + (admin_commands if is_admin else "")
-			# )
 			logger.info("Help message sent successfully")
 		
 		except Exception as e:
 			logger.error(f"Error in help command: {e}")
 			await update.message.reply_text(
 				"Sorry, there was an error showing the help message. Please try again."
+			)
+	
+	@admin_only
+	async def start_monitoring(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+		"""Handle the /start_monitoring command"""
+		try:
+			logger.info(f"Start monitoring command received from user {update.effective_user.id}")
+			if self.is_monitoring:
+				await update.message.reply_text("Twitter account monitoring is already running.")
+				return
+			
+			# Start monitoring
+			asyncio.create_task(self.twitter_monitor.monitor())
+			self.is_monitoring = True
+			await update.message.reply_text("Twitter account monitoring started.")
+			logger.info("Twitter account monitoring started")
+		except Exception as e:
+			logger.error(f"Error in start_monitoring command: {e}")
+			await update.message.reply_text(
+				"Sorry, there was an error starting the Twitter account monitoring. Please try again."
+			)
+	
+	@admin_only
+	async def stop_monitoring(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+		"""Handle the /stop_monitoring command"""
+		try:
+			logger.info(f"Stop monitoring command received from user {update.effective_user.id}")
+			if not self.is_monitoring:
+				await update.message.reply_text("Twitter account monitoring is not running.")
+				return
+			
+			# Stop monitoring
+			self.twitter_monitor.stop_monitoring(False)
+			self.is_monitoring = False
+			await update.message.reply_text("Twitter account monitoring stopped.")
+			logger.info("Twitter account monitoring stopped")
+		except Exception as e:
+			logger.error(f"Error in stop_monitoring command: {e}")
+			await update.message.reply_text(
+				"Sorry, there was an error stopping the Twitter account monitoring. Please try again."
 			)

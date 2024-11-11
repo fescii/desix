@@ -5,7 +5,7 @@ from src.db.models import User, MonitoredAccount, AccessRequest
 class UserQueries:
 	def __init__(self, session: Session, config):
 		self.session = session
-		# create initial user using config.SUPER_ADMIN_ID
+		# create an initial user using config.SUPER_ADMIN_ID
 		user = self.get_user(telegram_id=config.SUPER_ADMIN_ID)
 		if not user:
 			user = self.create_user(
