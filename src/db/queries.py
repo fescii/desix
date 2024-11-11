@@ -3,8 +3,19 @@ from sqlalchemy.orm import Session
 from src.db.models import User, MonitoredAccount, AccessRequest
 
 class UserQueries:
-	def __init__(self, session: Session):
+	def __init__(self, session: Session, config):
 		self.session = session
+		# create initial user using config.SUPER_ADMIN_ID
+		user = self.get_user(telegram_id=config.SUPER_ADMIN_ID)
+		if not user:
+			user = self.create_user(
+				telegram_id=config.SUPER_ADMIN_ID,
+				username='admin',
+				role='super_admin'
+			)
+			print(f'Created super admin: {user.username}')
+		print(f'Super admin already exists: \n - username: {user.username} \n - telegram_id: {user.telegram_id}\n - role: {user.role}')
+		
 
 	def get_user(self, telegram_id: str):
 		return self.session.query(User).filter_by(telegram_id=telegram_id).first()

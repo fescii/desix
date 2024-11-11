@@ -91,7 +91,7 @@ async def create_app(app_config: Config):
 		)
 		
 		# Initialize queries
-		user_queries = UserQueries(session)
+		user_queries = UserQueries(session, config=app_config)
 		account_queries = AccountQueries(session)
 		
 		#initialize Twitter API
@@ -123,7 +123,7 @@ async def create_app(app_config: Config):
 		# Register handlers
 		handlers.register_handlers(telegram_app)
 		
-		# Store telegram bot in app state
+		# Store telegram bot in-app state
 		fastapi_app.state.telegram_bot = telegram_app
 		
 		return fastapi_app

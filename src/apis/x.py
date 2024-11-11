@@ -4,10 +4,11 @@ from src.config import Config
 class TwitterAPI:
 	def __init__(self, config: Config):
 		self.client = tweepy.Client(
-			consumer_key=config.TWITTER_API_KEY,
-			consumer_secret=config.TWITTER_API_SECRET,
-			access_token=config.TWITTER_ACCESS_TOKEN,
-			access_token_secret=config.TWITTER_ACCESS_SECRET
+			# consumer_key=config.TWITTER_API_KEY,
+			# consumer_secret=config.TWITTER_API_SECRET,
+			# access_token=config.TWITTER_ACCESS_TOKEN,
+			bearer_token=config.TWITTER_BEARER_TOKEN,
+			# access_token_secret=config.TWITTER_ACCESS_SECRET
 		)
 		
 		# check if a client is authenticated
