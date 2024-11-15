@@ -23,7 +23,7 @@ class TwitterManager:
             access_token=config.DX_TWITTER_ACCESS_TOKEN,
             access_token_secret=config.DX_TWITTER_ACCESS_SECRET,
         )
-        self.poll_interval = 7.5
+        self.poll_interval = config.TWITTER_POLL_INTERVAL
         self.monitoring = False
         self.monitored_users = []
         self.last_tweets = {}
