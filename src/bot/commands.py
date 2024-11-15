@@ -243,6 +243,8 @@ class Commands:
                 return
 
             username = context.args[0]
+            #remove leading @ if present
+            username = username.strip('@')
             twitter_id = await self.twitter_monitor.get_user_id(username)
             username = username.strip('@')  # Remove @ if provided
 
