@@ -1,6 +1,6 @@
 # db/queries.py
 from sqlalchemy.orm import Session
-from src.db.models import User, MonitoredAccount, AccessRequest
+from .models import User, MonitoredAccount, AccessRequest
 
 class UserQueries:
 	def __init__(self, session: Session, config):
@@ -83,3 +83,9 @@ class AccountQueries:
 		return self.session.query(MonitoredAccount).filter_by(
 			added_by=admin_id
 		).all()
+
+	def get_admin_chat_ids(self):
+		admins = self.session.query(User).filter(
+			User.role.in_(['admin', 'super_admin'])
+		).all()
+		return [admin.telegram_id for admin in admins]

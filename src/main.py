@@ -13,7 +13,7 @@ from bot.commands import Commands
 from bot.handlers import BotHandlers
 from db.queries import UserQueries, AccountQueries
 from hooks.x import TwitterMonitor
-from apis.x import TwitterAPIv2
+from apis.x import TwitterManager
 from db.models import Base
 
 logging.basicConfig(
@@ -97,16 +97,15 @@ async def create_app(app_config: Config):
 		account_queries = AccountQueries(session)
 		
 		#initialize Twitter API
-		twitter_api = TwitterAPIv2(app_config)
-		
-		twitter_monitor = TwitterMonitor(
-			twitter_api=twitter_api,
+		twitter_api = TwitterManager(
+			config=app_config,
 			account_queries=account_queries,
 			telegram_bot=telegram_app,
+			user_queries=user_queries
 		)
 	
 		# Initialize bot components
-		commands = Commands(telegram_app, user_queries, account_queries, twitter_api, twitter_monitor)
+		commands = Commands(telegram_app, user_queries, account_queries, twitter_api)
 		handlers = BotHandlers(commands)
 		
 		# Register handlers
@@ -114,7 +113,7 @@ async def create_app(app_config: Config):
 		
 		# Store telegram bot in-app state
 		fastapi_app.state.telegram_bot = telegram_app
-		fastapi_app.state.twitter_monitor = twitter_monitor
+		fastapi_app.state.twitter_monitor = twitter_api
 		
 		return fastapi_app
 	
