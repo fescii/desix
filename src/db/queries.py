@@ -37,6 +37,11 @@ class UserQueries:
 		self.session.add(request)
 		self.session.commit()
 		return True
+	def get_admin_chat_ids(self):
+		admins = self.session.query(User).filter(
+			User.role.in_(['admin', 'super_admin'])
+		).all()
+		return [admin.telegram_id for admin in admins]
 
 class AccountQueries:
 	def __init__(self, session: Session):

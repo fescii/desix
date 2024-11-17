@@ -12,7 +12,6 @@ from config import Config
 from bot.commands import Commands
 from bot.handlers import BotHandlers
 from db.queries import UserQueries, AccountQueries
-from hooks.x import TwitterMonitor
 from apis.x import TwitterManager
 from db.models import Base
 

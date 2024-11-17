@@ -419,14 +419,14 @@ class Commands:
                 )
                 return
 
-            # list of usernames to monitor
-            usernames = [
-                account.twitter_username
+            # list of usernames and twitter ids
+            users = [
+                (account.twitter_username, account.twitter_id)
                 for account in self.account_queries.get_all_accounts()
             ]
 
             # Start monitoring
-            asyncio.create_task(self.twitter_monitor.monitor(usernames))
+            asyncio.create_task(self.twitter_monitor.monitor(users))
             self.is_monitoring = True
             await update.message.reply_text("Twitter account monitoring started.")
             logger.info("Twitter account monitoring started")
