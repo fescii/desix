@@ -11,11 +11,11 @@ logger = logging.getLogger(__name__)
 class TwitterManager:
     def __init__(self, config: Config, telegram_bot, user_queries, account_queries):
         self.base_url = "https://api.twitter.com/2"
-        self.headers_dy = {
-            "Authorization": f"Bearer {config.DY_TWITTER_BEARER_TOKEN}"
-        }
         self.headers_dx = {
             "Authorization": f"Bearer {config.DX_TWITTER_BEARER_TOKEN}"
+        }
+        self.headers_dy = {
+            "Authorization": f"Bearer {config.DY_TWITTER_BEARER_TOKEN}"
         }
         
         self.poll_interval = config.TWITTER_POLL_INTERVAL
@@ -27,12 +27,32 @@ class TwitterManager:
         self.account_queries = account_queries
         self.monitor_task = None
         
-         # Token status tracking
+        # Token status tracking
         self.token_status = {
             'dy': {'authorized': True, 'rate_limit_remaining': None, 'rate_limit_reset': None},
             'dx': {'authorized': True, 'rate_limit_remaining': None, 'rate_limit_reset': None}
         }
+        self.current_token = 'dy'  # Start with dy token
         self.rate_limit_warning_threshold = 10
+
+    def get_next_token(self):
+        """Get the next available token for API requests"""
+        tokens = ['dy', 'dx']
+        if all(self.token_status[t]['authorized'] for t in tokens):
+            # If both tokens are authorized, alternate between them
+            self.current_token = 'dx' if self.current_token == 'dy' else 'dy'
+        else:
+            # If only one token is authorized, use that one
+            self.current_token = next(
+                (t for t in tokens if self.token_status[t]['authorized']),
+                None
+            )
+        return self.current_token
+    
+    def get_current_headers(self):
+        """Get the headers for the current token"""
+        token = self.get_next_token()
+        return self.headers_dy if token == 'dy' else self.headers_dx
 
     def create_tweet_url(self, username: str, tweet_id: str) -> str:
         """Create the URL for a tweet"""
@@ -237,25 +257,37 @@ class TwitterManager:
             return None
 
     async def handle_unauthorized_token(self, token_type: str):
-        """Handle unauthorized token scenario"""
+        """Handle unauthorized token scenario with clear messaging"""
         self.token_status[token_type]['authorized'] = False
         
-        message = (
-            f"🚫 Authorization Failed for {token_type.upper()} token!\n"
-            f"Token has been marked as unauthorized.\n"
-            f"Please check token validity and update configuration."
-        )
-        
+        message = f"⚠️ {token_type.upper()} token unauthorized - switching to alternate token"
         logger.error(f"Token {token_type.upper()} unauthorized")
         
-        admin_chat_ids = self.account_queries.get_admin_chat_ids()
-        if admin_chat_ids:
+        # Only notify if all tokens become unauthorized
+        if not any(status['authorized'] for status in self.token_status.values()):
+            message = "🚫 All tokens unauthorized - monitoring stopped"
+            admin_chat_ids = self.account_queries.get_admin_chat_ids()
             for admin_chat_id in admin_chat_ids:
                 await self.send_to_telegram(chat_id=admin_chat_id, message=message)
+            await self.stop_monitoring()
+
+    async def handle_rate_limit_exceeded(self, token_type: str):
+        """Handle rate limit exceeded with clear messaging"""
+        reset_time = self.token_status[token_type]['rate_limit_reset']
+        if reset_time:
+            reset_in = (reset_time - datetime.datetime.now()).total_seconds() / 60
+            message = f"⚠️ {token_type.upper()} rate limit reached - reset in {reset_in:.0f}min"
+        else:
+            message = f"⚠️ {token_type.upper()} rate limit reached - switching tokens"
         
-        # Check if all tokens are unauthorized
-        if not any(status['authorized'] for status in self.token_status.values()):
-            await self.handle_all_tokens_unauthorized()
+        admin_chat_ids = self.account_queries.get_admin_chat_ids()
+        for admin_chat_id in admin_chat_ids:
+            await self.send_to_telegram(chat_id=admin_chat_id, message=message)
+        
+        # If both tokens are rate limited, pause monitoring
+        if (self.token_status['dy']['rate_limit_remaining'] == 0 and
+            self.token_status['dx']['rate_limit_remaining'] == 0):
+            await self.pause_monitoring_until_reset()
 
     async def handle_all_tokens_unauthorized(self):
         """Handle scenario where all tokens are unauthorized"""
@@ -273,7 +305,7 @@ class TwitterManager:
         await self.stop_monitoring()
 
     async def fetch_user_tweets(self, user: set, headers, since_id=None):
-        """Fetch both tweets and replies for a user with error handling"""
+        """Fetch tweets for a user without sending to Telegram"""
         try:
             username, user_id = user
             params = {
@@ -312,22 +344,6 @@ class TwitterManager:
                     ]
 
                 logger.info(f"Fetched {len(sorted_tweets)} tweets for @{username}")
-                
-                # Send tweets to Telegram with new format
-                chat_ids = self.user_queries.get_authorized_chat_ids()
-                for tweet in reversed(sorted_tweets):
-                    if tweet['is_reply']:
-                        message, keyboard = self.format_reply_message(username, tweet)
-                    else:
-                        message, keyboard = self.format_tweet_message(username, tweet)
-                        
-                    for chat_id in chat_ids:
-                        await self.send_to_telegram(
-                            chat_id=chat_id,
-                            message=message,
-                            reply_markup=keyboard
-                        )
-
                 return username, sorted_tweets
 
             return username, None
@@ -335,7 +351,7 @@ class TwitterManager:
         except Exception as e:
             logger.error(f"Error fetching tweets for @{username}: {e}")
             return None, None
-        
+
     async def notify_rate_limit_warning(self, token_type: str):
         """Notify admins about approaching rate limit for authorized tokens"""
         if not self.token_status[token_type]['authorized']:
@@ -456,23 +472,17 @@ class TwitterManager:
                 logger.info(msg)
 
     async def monitor_loop(self):
-        """The main monitoring loop with token selection logic"""
+        """Improved monitor loop with token switching and centralized message sending"""
         while self.monitoring:
             try:
-                # Select available authorized token
-                current_headers = None
-                if self.token_status['dy']['authorized']:
-                    current_headers = self.headers_dy
-                elif self.token_status['dx']['authorized']:
-                    current_headers = self.headers_dx
-                
+                current_headers = self.get_current_headers()
                 if not current_headers:
                     logger.error("No authorized tokens available")
                     await self.handle_all_tokens_unauthorized()
                     break
                 
                 for user in self.monitored_users:
-                    _, tweets = await self.fetch_user_tweets(
+                    username, tweets = await self.fetch_user_tweets(
                         user,
                         current_headers,
                         self.last_tweets.get(user)
@@ -480,26 +490,26 @@ class TwitterManager:
                     
                     if tweets and len(tweets) > 0:
                         self.last_tweets[user] = tweets[0]['id']
+                        # Send tweets to Telegram here
+                        chat_ids = self.user_queries.get_admin_chat_ids()
                         for tweet in reversed(tweets):
-                            message = (
-                                self.format_reply_message(user[0], tweet) 
-                                if tweet['is_reply'] 
-                                else self.format_tweet_message(user[0], tweet)
-                            )
+                            if tweet['is_reply']:
+                                message, keyboard = self.format_reply_message(username, tweet)
+                            else:
+                                message, keyboard = self.format_tweet_message(username, tweet)
                             
-                            chat_ids = self.user_queries.get_authorized_chat_ids()
                             for chat_id in chat_ids:
                                 await self.send_to_telegram(
-                                    chat_id, 
-                                    message, 
-                                    self.create_tweet_url(user[0], tweet['id'])
+                                    chat_id=chat_id,
+                                    message=message,
+                                    reply_markup=keyboard
                                 )
                 
                 await asyncio.sleep(self.poll_interval)
             
             except Exception as e:
                 logger.error(f"Error in monitor loop: {e}")
-                await asyncio.sleep(self.poll_interval)
+                await asyncio.sleep(self.poll_interval)    
 
     async def monitor(self, users: list[set]):
         """Start monitoring tweets from the given usernames"""
@@ -547,17 +557,18 @@ class TwitterManager:
             try:
                 await self.monitor_task
             except asyncio.CancelledError:
-                pass
+                logger.info("Monitoring task cancelled.")
             self.monitor_task = None
         
         logger.info("Stopped monitoring.")
         
-        admin_chat_id = self.account_queries.get_admin_chat_id()
-        if admin_chat_id:
-            await self.send_to_telegram(
-                chat_id=admin_chat_id,
-                message="🔔 Stopped monitoring tweets"
-            )
+        admin_chat_ids = self.account_queries.get_admin_chat_ids()
+        if admin_chat_ids:
+            for admin_chat_id in admin_chat_ids:
+                await self.send_to_telegram(
+                    chat_id=admin_chat_id,
+                    message="🔕 Monitoring has been stopped."
+                )
 
     async def add_monitored_user(self, user: set):
         """Add a new user to the monitored list"""
