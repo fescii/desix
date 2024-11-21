@@ -63,6 +63,7 @@ class Commands:
                 await update.message.reply_text(
 					"Access request submitted. An admin will review it."
 				)
+
                 # Notify admins
                 await self.notify_admins(f"New access request from {user_id}")
                 logger.info(f"Access request created for user {user_id}")

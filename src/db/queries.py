@@ -27,12 +27,6 @@ class UserQueries:
 		return user
 
 	def create_access_request(self, user_id: int):
-		if self.session.query(AccessRequest).filter_by(
-				user_id=user_id,
-				status='pending'
-		).first():
-			return False
-
 		request = AccessRequest(user_id=user_id, status='pending')
 		self.session.add(request)
 		self.session.commit()
