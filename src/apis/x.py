@@ -89,7 +89,7 @@ class TwitterManager:
         ])
         
         message = (
-            f"📩 <b>Reply from @{username}</b>\n\n"
+            f"<b>Reply | @{username}</b>\n\n"
             f"{text}\n\n"
             f"🕒 {timestamp}"
         )
@@ -112,7 +112,7 @@ class TwitterManager:
         ])
         
         message = (
-            f"📱 <b>New Tweet from @{username}</b>\n\n"
+            f"<b>Tweet | @{username}</b>\n\n"
             f"{text}\n\n"
             f"🕒 {timestamp}"
         )
@@ -266,7 +266,7 @@ class TwitterManager:
         # Only notify if all tokens become unauthorized
         if not any(status['authorized'] for status in self.token_status.values()):
             message = "🚫 All tokens unauthorized - monitoring stopped"
-            admin_chat_ids = self.account_queries.get_admin_chat_ids()
+            admin_chat_ids = self.account_queries.get_super_admin_chat_ids()
             for admin_chat_id in admin_chat_ids:
                 await self.send_to_telegram(chat_id=admin_chat_id, message=message)
             await self.stop_monitoring()
@@ -280,7 +280,7 @@ class TwitterManager:
         else:
             message = f"⚠️ {token_type.upper()} rate limit reached - switching tokens"
         
-        admin_chat_ids = self.account_queries.get_admin_chat_ids()
+        admin_chat_ids = self.account_queries.get_super_admin_chat_ids()
         for admin_chat_id in admin_chat_ids:
             await self.send_to_telegram(chat_id=admin_chat_id, message=message)
         
@@ -297,7 +297,7 @@ class TwitterManager:
             "Please update the configuration with valid tokens."
         )
         
-        admin_chat_ids = self.account_queries.get_admin_chat_ids()
+        admin_chat_ids = self.account_queries.get_super_admin_chat_ids()
         if admin_chat_ids:
             for admin_chat_id in admin_chat_ids:
                 await self.send_to_telegram(chat_id=admin_chat_id, message=message)
@@ -368,7 +368,7 @@ class TwitterManager:
             f"Reset time: {reset_time.strftime('%Y-%m-%d %H:%M:%S')}"
         )
         
-        admin_chat_ids = self.account_queries.get_admin_chat_ids()
+        admin_chat_ids = self.account_queries.get_super_admin_chat_ids()
         if admin_chat_ids:
             for admin_chat_id in admin_chat_ids:
                 await self.send_to_telegram(chat_id=admin_chat_id, message=message)
@@ -391,7 +391,7 @@ class TwitterManager:
                 f"Reset time: {reset_time_str}"
             )
             
-            admin_chat_ids = self.account_queries.get_admin_chat_ids()
+            admin_chat_ids = self.account_queries.get_super_admin_chat_ids()
             if admin_chat_ids:
                 for admin_chat_id in admin_chat_ids:
                     await self.send_to_telegram(chat_id=admin_chat_id, message=message)
@@ -415,7 +415,7 @@ class TwitterManager:
         try:
             message = "⏸️ Monitoring temporarily paused due to rate limits on both tokens"
             
-            admin_chat_ids = self.account_queries.get_admin_chat_ids()
+            admin_chat_ids = self.account_queries.get_super_admin_chat_ids()
             if admin_chat_ids:
                 for admin_chat_id in admin_chat_ids:
                     await self.send_to_telegram(chat_id=admin_chat_id, message=message)
